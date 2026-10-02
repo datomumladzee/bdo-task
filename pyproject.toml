@@ -1,0 +1,35 @@
+[project]
+name = "bdo-task"
+version = "0.1.0"
+description = "HR leave assistant: MCP server and Georgian RAG CLI"
+readme = "README.md"
+authors = [
+    { name = "datomumladzee", email = "dato.mumladze1@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[cli]>=2.2.0",
+    "numpy>=2.5.3",
+    "openai>=3.24.0",
+    "pdfplumber>=0.11.10",
+    "pydantic>=2.13.5",
+    "python-docx>=1.2.0",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

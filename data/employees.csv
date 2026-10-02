@@ -1,0 +1,15 @@
+employee_id,full_name,email,department_code,department_name,job_title,employment_type,start_date,probation_end_date,manager_id,status
+E1001,ნინო ბერიძე,nino.beridze@northstar.example,AUD,აუდიტი და მარწმუნებელი მომსახურება,უფროსი აუდიტორი,full_time,3/4/2019,6/3/2019,E1010,active
+E1002,ალექსანდრე კაპანაძე,aleksandre.kapanadze@northstar.example,ADV,საკონსულტაციო მომსახურება,კონსულტანტი,full_time,6/10/2024,9/9/2024,E1011,active
+E1003,ქეთევან ლომიძე,ketevan.lomidze@northstar.example,TAX,საგადასახადო მომსახურება,საგადასახადო მენეჯერი,full_time,9/15/2014,12/14/2014,E1012,active
+E1004,ლუკა წიკლაური,luka.tsiklauri@northstar.example,TEC,ტექნოლოგიები და ავტომატიზაცია,ავტომატიზაციის უმცროსი დეველოპერი,full_time,9/1/2026,11/30/2026,E1013,active
+E1005,ანა გელაშვილი,ana.gelashvili@northstar.example,AUD,აუდიტი და მარწმუნებელი მომსახურება,აუდიტის ასოცირებული სპეციალისტი,full_time,2/1/2023,4/30/2023,E1010,active
+E1006,დავით მაისურაძე,davit.maisuradze@northstar.example,ADV,საკონსულტაციო მომსახურება,უფროსი კონსულტანტი,full_time,5/17/2021,8/16/2021,E1011,active
+E1007,თამარ ჯორჯაძე,tamar.jorjadze@northstar.example,HRS,ადამიანური რესურსების სამსახური,HR ბიზნეს პარტნიორი,full_time,1/13/2020,4/12/2020,E1014,active
+E1008,ლევან აბაშიძე,levan.abashidze@northstar.example,FIN,ფინანსები და ადმინისტრირება,ბუღალტერი,full_time,8/1/2022,10/31/2022,E1014,active
+E1009,სალომე ხუციშვილი,salome.khutsishvili@northstar.example,TEC,ტექნოლოგიები და ავტომატიზაცია,ავტომატიზაციის კონსულტანტი,full_time,1/10/2022,4/9/2022,E1013,active
+E1010,ირაკლი ნოზაძე,irakli.nozadze@northstar.example,AUD,აუდიტი და მარწმუნებელი მომსახურება,აუდიტის მენეჯერი,full_time,4/1/2015,6/30/2015,,active
+E1011,ეკა ჩხეიძე,eka.chkheidze@northstar.example,ADV,საკონსულტაციო მომსახურება,საკონსულტაციო მენეჯერი,full_time,10/2/2017,1/1/2018,,active
+E1012,ბექა ქავთარაძე,beka.kavtaradze@northstar.example,TAX,საგადასახადო მომსახურება,საგადასახადო დირექტორი,full_time,3/18/2013,6/17/2013,,active
+E1013,თეონა გოგოლაძე,teona.gogoladze@northstar.example,TEC,ტექნოლოგიები და ავტომატიზაცია,ავტომატიზაციის მენეჯერი,full_time,2/19/2018,5/18/2018,,active
+E1014,ნიკა შენგელია,nika.shengelia@northstar.example,FIN,ფინანსები და ადმინისტრირება,ფინანსური დირექტორი,full_time,6/6/2016,9/5/2016,,active
