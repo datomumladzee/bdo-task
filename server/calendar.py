@@ -31,6 +31,11 @@ def today() -> date:
         raise ValueError(f"APP_TODAY must be YYYY-MM-DD, got {raw!r}") from exc
 
 
+def now() -> datetime:
+    """Current time of day on the app's today(), for created_at / decided_at stamps."""
+    return datetime.combine(today(), datetime.now().astimezone().time()).replace(microsecond=0)
+
+
 def load_holidays(conn: sqlite3.Connection) -> frozenset[date]:
     return frozenset(
         date.fromisoformat(row[0]) for row in conn.execute("SELECT date FROM public_holidays")
