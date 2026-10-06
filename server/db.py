@@ -267,7 +267,8 @@ def init_db(db_path: str | Path | None = None, data_dir: Path = DATA_DIR) -> Non
     """Create the schema and import the CSVs if the database is empty."""
     conn = get_connection(db_path)
     try:
-        conn.executescript(SCHEMA)
+        # One transaction: otherwise every CREATE statement is its own disk sync.
+        conn.executescript(f"BEGIN;\n{SCHEMA}\nCOMMIT;")
         if conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0] == 0:
             with conn:
                 import_csvs(conn, data_dir)

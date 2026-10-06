@@ -4,9 +4,31 @@ Holidays come only from the public_holidays table (Article 2.3); pass them in
 so the functions stay pure and easy to test.
 """
 
+import os
 import sqlite3
 from collections.abc import Collection
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+
+def today() -> date:
+    """The app's "today": APP_TODAY from .env if set, otherwise the real date.
+
+    Call this only at the edges (MCP tools, CLI); business logic takes `today`
+    as a parameter so tests stay deterministic.
+    """
+    load_dotenv(_ENV_FILE)
+    raw = os.getenv("APP_TODAY")
+    if not raw:
+        return datetime.now().astimezone().date()
+    try:
+        return date.fromisoformat(raw.strip())
+    except ValueError as exc:
+        raise ValueError(f"APP_TODAY must be YYYY-MM-DD, got {raw!r}") from exc
 
 
 def load_holidays(conn: sqlite3.Connection) -> frozenset[date]:
