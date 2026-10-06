@@ -14,13 +14,6 @@ CSV_FILES = {
 }
 
 
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    path = tmp_path / "test.db"
-    init_db(path)
-    return path
-
-
 def _csv_row_count(filename: str) -> int:
     with (DATA_DIR / filename).open(encoding="utf-8-sig", newline="") as f:
         return sum(1 for _ in csv.DictReader(f))

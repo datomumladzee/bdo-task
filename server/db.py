@@ -1,13 +1,14 @@
 """SQLite schema and CSV importer for the HR leave database."""
 
-import csv          # reads CSV files
-import os           # reads environment variables (.env)
-import re           # pattern matching (to recognise dates)
-import sqlite3      # talks to the SQLite database
-from datetime import date, datetime   # works with dates
-from pathlib import Path              # works with file paths
+import csv  # reads CSV files
+import os  # reads environment variables (.env)
+import re  # pattern matching (to recognise dates)
+import sqlite3  # talks to the SQLite database
+from collections.abc import Callable  # type hint for the column converters
+from datetime import date, datetime  # works with dates
+from pathlib import Path  # works with file paths
 
-from dotenv import load_dotenv        # loads the .env file
+from dotenv import load_dotenv  # loads the .env file
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
