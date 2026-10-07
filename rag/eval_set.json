@@ -1,0 +1,103 @@
+{
+  "answerable": [
+    {
+      "question": "რამდენი დღე გადადის მომდევნო წელზე გამოუყენებელი შვებულებიდან?",
+      "topic": "carry-over (FAQ and Handbook give the outdated 10 days)",
+      "expected": [["HR-POL-02", "4.7"]]
+    },
+    {
+      "question": "რამდენი ხნით ადრე უნდა მოვითხოვო 10-დღიანი შვებულება?",
+      "topic": "notice period (FAQ gives the outdated 5 days)",
+      "expected": [["HR-POL-02", "4.4"]]
+    },
+    {
+      "question": "რამდენი ანაზღაურებადი ავადმყოფობის დღე მეკუთვნის წელიწადში?",
+      "topic": "paid sick days",
+      "expected": [["HR-POL-02", "6.4"], ["HR-POL-02", "3.1"], ["HR-POL-02", "5.1"]]
+    },
+    {
+      "question": "ავადმყოფობისას როდის მჭირდება სამედიცინო ცნობა?",
+      "topic": "medical certificate (FAQ and Handbook give the outdated 3 days)",
+      "expected": [["HR-POL-02", "6.3"]]
+    },
+    {
+      "question": "ბებია გარდამეცვალა. რამდენი დღე შვებულება მეკუთვნის?",
+      "topic": "bereavement, other relatives",
+      "expected": [["HR-POL-02", "8.2"]]
+    },
+    {
+      "question": "შემიძლია ყოველწლიური შვებულების აღება გამოსაცდელი ვადის დროს?",
+      "topic": "probation",
+      "expected": [["HR-POL-02", "4.3"]]
+    },
+    {
+      "question": "7 წელია კომპანიაში ვმუშაობ. რამდენი დღე შვებულება მეკუთვნის?",
+      "topic": "entitlement by length of service",
+      "expected": [["HR-POL-02", "4.1"]]
+    },
+    {
+      "question": "კვირაში რამდენი დღე შემიძლია სახლიდან ვიმუშაო?",
+      "topic": "remote work limit (FAQ and Handbook give the outdated 3 days)",
+      "expected": [["HR-POL-05", "4.1"]]
+    },
+    {
+      "question": "შემიძლია რამდენიმე დღე საზღვარგარეთიდან ვიმუშაო?",
+      "topic": "working abroad",
+      "expected": [["HR-POL-05", "5.2"]]
+    },
+    {
+      "question": "რა არის სასტუმროს ლიმიტი ერთ ღამეზე ლონდონში?",
+      "topic": "hotel limits (table)",
+      "expected": [["FIN-POL-03", "5.1"]]
+    },
+    {
+      "question": "რამდენია დღიური ნორმა გერმანიაში მივლინებისას?",
+      "topic": "per diem (table)",
+      "expected": [["FIN-POL-03", "6.2"]]
+    },
+    {
+      "question": "სახლისთვის მონიტორი ვიყიდე. რამდენს ამინაზღაურებენ?",
+      "topic": "home office equipment",
+      "expected": [["FIN-POL-03", "8.1"], ["FIN-POL-03", "8.2"], ["HR-FAQ-01", "ე.2"]]
+    },
+    {
+      "question": "რამდენი სიმბოლოსგან უნდა შედგებოდეს პაროლი?",
+      "topic": "password length",
+      "expected": [["SEC-POL-01", "4.1"]]
+    },
+    {
+      "question": "შემიძლია კლიენტის დოკუმენტი ChatGPT-ში ავტვირთო?",
+      "topic": "AI tools and confidential data",
+      "expected": [["SEC-POL-01", "6.3"], ["SEC-POL-01", "6.2"], ["SEC-POL-01", "6.1"]]
+    },
+    {
+      "question": "ACCA-ს მიღებიდან 10 თვეში თუ წავალ კომპანიიდან, რა ნაწილი უნდა დავაბრუნო?",
+      "topic": "training cost repayment (table)",
+      "expected": [["HR-POL-07", "6.2"]]
+    },
+    {
+      "question": "ხელფასი თვის რომელ რიცხვში ირიცხება?",
+      "topic": "salary payment day",
+      "expected": [["HR-HB-01", "4.1"]]
+    },
+    {
+      "question": "ფიტნესის აბონემენტს აფინანსებს კომპანია?",
+      "topic": "fitness",
+      "expected": [["HR-HB-01", "4.3"]]
+    }
+  ],
+  "unanswerable": [
+    {
+      "question": "შემიძლია ოფისში ძაღლის მოყვანა?",
+      "topic": "pets in the office"
+    },
+    {
+      "question": "კომპანია თანამშრომლებს სამსახურებრივ მანქანას გამოუყოფს?",
+      "topic": "company car (only personal and rented cars are covered)"
+    },
+    {
+      "question": "კომპანია კვების ვაუჩერებს გასცემს ოფისში სადილისთვის?",
+      "topic": "meal vouchers"
+    }
+  ]
+}
