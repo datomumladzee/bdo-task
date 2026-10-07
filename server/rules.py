@@ -173,6 +173,9 @@ def validate_request(
             )
         )
 
+    # Policy checks: run all of them and collect every violation, so the
+    # employee sees all problems at once (Article 12.3). The blocking checks
+    # above stop early because these checks need valid input.
     checks = [
         _check_probation(leave_type, start, employee["probation_end_date"]),
         _check_notice(leave_type, start, days, today, holidays),
@@ -183,6 +186,7 @@ def validate_request(
         _check_reason(leave_type, comment),
         _check_overlap(conn, employee_id, start, end),
     ]
+    # Keep only the checks that returned a violation (None means the rule passed).
     return ValidationResult(violations=tuple(v for v in checks if v), days=days)
 
 
