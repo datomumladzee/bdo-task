@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -22,7 +23,14 @@ EMPLOYEE_TOOLS = {
     "propose_leave_request",
     "confirm_leave_request",
 }
-HR_TOOLS = {"list_requests", "get_balance", "approve_request", "reject_request", "cancel_request"}
+HR_TOOLS = {
+    "list_requests",
+    "get_balance",
+    "create_request",
+    "approve_request",
+    "reject_request",
+    "cancel_request",
+}
 
 
 @pytest.fixture
@@ -65,6 +73,15 @@ async def test_all_tools_are_listed(db_path: Path) -> None:
     ("tool", "args"),
     [
         ("list_requests", {}),
+        (
+            "create_request",
+            {
+                "employee_id": "E1001",
+                "leave_type": "ANNUAL",
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-03",
+            },
+        ),
         ("get_balance", {"employee_id": "E1002"}),
         ("approve_request", {"request_id": 5}),
         ("reject_request", {"request_id": 5, "reason": "x"}),
@@ -163,6 +180,37 @@ async def test_hr_can_list_and_see_any_balance(db_path: Path) -> None:
     assert [r["request_id"] for r in pending["requests"]] == [5, 15]
     assert balance["balances"][0]["available_days"] == 4
     assert "UNKNOWN_EMPLOYEE" in missing
+
+
+@pytest.mark.anyio
+async def test_hr_create_request_tool(db_path: Path) -> None:
+    args = {
+        "employee_id": "E1003",
+        "leave_type": "ANNUAL",
+        "start_date": "2026-10-27",
+        "end_date": "2026-10-29",
+    }
+    async with client(db_path, "E1007", "hr") as hr:
+        created = await call(hr, "create_request", args)
+        again = await call(hr, "create_request", args)
+        listed = await call(hr, "list_requests", {"employee_id": "E1003", "status": "pending"})
+    assert (created["ok"], created["request_id"], created["days"]) == (True, 28, 3)
+    assert [v["code"] for v in again["violations"]] == ["OVERLAP"]
+    assert [(r["request_id"], r["created_via"]) for r in listed["requests"]] == [(28, "assistant")]
+
+
+def test_hr_role_refused_at_startup_outside_hr_department(db_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "server.mcp_server", "--employee", "E1001", "--role", "hr"],
+        cwd=PROJECT_ROOT,
+        env={**os.environ, "DB_PATH": str(db_path)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "only Human Resources staff can use the hr role" in result.stderr
 
 
 @pytest.mark.anyio

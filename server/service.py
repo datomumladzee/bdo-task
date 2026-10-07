@@ -24,6 +24,7 @@ from server.rules import ValidationResult, validate_request
 
 ROLES = ("employee", "hr")
 STATUSES = ("pending", "approved", "rejected", "cancelled")
+HR_DEPARTMENT = "HRS"
 
 
 @dataclass(frozen=True)
@@ -68,9 +69,20 @@ def _write_transaction(conn: sqlite3.Connection) -> Iterator[None]:
 
 
 def load_identity(conn: sqlite3.Connection, employee_id: str, role: str) -> Identity:
+    """Check the startup identity. The hr role is only for Human Resources staff."""
     if role not in ROLES:
         raise InvalidRequest("INVALID_ROLE", f"role must be one of {ROLES}, got {role!r}")
     _require_employee(conn, employee_id)
+    if role == "hr":
+        department = conn.execute(
+            "SELECT department_code FROM employees WHERE employee_id = ?", (employee_id,)
+        ).fetchone()["department_code"]
+        if department != HR_DEPARTMENT:
+            raise PermissionDenied(
+                "HR_ROLE_NOT_ALLOWED",
+                f"Employee {employee_id} is in department {department}, not {HR_DEPARTMENT}; "
+                "only Human Resources staff can use the hr role.",
+            )
     return Identity(employee_id=employee_id, role=role)
 
 
@@ -337,29 +349,105 @@ def confirm_leave(
             )
             return {"ok": False, "violations": _violations(result)}
 
-        cursor = conn.execute(
-            """
-            INSERT INTO leave_requests
-                (employee_id, leave_type, start_date, end_date, days, status,
-                 created_at, created_via, comment)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?, 'assistant', ?)
-            """,
-            (
-                identity.employee_id,
-                payload["leave_type"],
-                payload["start_date"],
-                payload["end_date"],
-                result.days,
-                now.isoformat(),
-                payload["comment"],
-            ),
+        assert result.days is not None
+        request_id = _insert_request(
+            conn,
+            employee_id=identity.employee_id,
+            leave_type=payload["leave_type"],
+            start=payload["start_date"],
+            end=payload["end_date"],
+            days=result.days,
+            comment=payload["comment"],
+            now=now,
         )
-        request_id = cursor.lastrowid
         conn.execute(
             "UPDATE leave_proposals SET status = 'confirmed', request_id = ? WHERE proposal_id = ?",
             (request_id, proposal_id),
         )
     return {"ok": True, "request_id": request_id, "status": "pending", "already_confirmed": False}
+
+
+def _insert_request(
+    conn: sqlite3.Connection,
+    *,
+    employee_id: str,
+    leave_type: str,
+    start: str,
+    end: str,
+    days: int,
+    comment: str | None,
+    now: datetime,
+) -> int:
+    """Every request created through the MCP server is pending and created via the
+    assistant (data dictionary)."""
+    cursor = conn.execute(
+        """
+        INSERT INTO leave_requests
+            (employee_id, leave_type, start_date, end_date, days, status,
+             created_at, created_via, comment)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, 'assistant', ?)
+        """,
+        (employee_id, leave_type, start, end, days, now.isoformat(), comment),
+    )
+    assert cursor.lastrowid is not None
+    return cursor.lastrowid
+
+
+# --- create on behalf of an employee (HR) ------------------------------------
+
+
+def create_request(
+    conn: sqlite3.Connection,
+    identity: Identity,
+    *,
+    employee_id: str,
+    leave_type: str,
+    start: date,
+    end: date,
+    today: date,
+    now: datetime,
+    comment: str | None = None,
+    known_in_advance: bool = False,
+) -> dict[str, Any]:
+    """HR creates a request for an employee in one step, under the same rules as
+    the employee assistant. Calling it twice is caught by the overlap rule."""
+    require_hr(identity)
+    leave_type = leave_type.strip().upper()
+    comment = comment.strip() if comment and comment.strip() else None
+    with _write_transaction(conn):
+        result = validate_request(
+            conn,
+            employee_id=employee_id,
+            leave_type=leave_type,
+            start=start,
+            end=end,
+            today=today,
+            comment=comment,
+            known_in_advance=known_in_advance,
+        )
+        if not result.ok:
+            return {"ok": False, "violations": _violations(result)}
+        assert result.days is not None
+        request_id = _insert_request(
+            conn,
+            employee_id=employee_id,
+            leave_type=leave_type,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            days=result.days,
+            comment=comment,
+            now=now,
+        )
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "employee_id": employee_id,
+        "leave_type": leave_type,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "days": result.days,
+        "status": "pending",
+    }
 
 
 # --- decisions (HR) ---------------------------------------------------------

@@ -195,6 +195,36 @@ def build_server(
             return {"employee_id": employee_id, "year": year, "balances": balances}
 
     @mcp.tool()
+    def create_request(
+        employee_id: str,
+        leave_type: str,
+        start_date: str,
+        end_date: str,
+        comment: str | None = None,
+        known_in_advance: bool = False,
+    ) -> dict[str, Any]:
+        """HR only. Create a pending leave request for an employee in one step, under
+        the same policy rules as the employee assistant (ANNUAL, SICK and UNPAID only;
+        dates YYYY-MM-DD, end inclusive; UNPAID needs a reason in comment). Returns
+        violations instead of creating the request if a rule is broken."""
+        hr_only()
+        start = _required_date(start_date, "start_date")
+        end = _required_date(end_date, "end_date")
+        with connect() as conn:
+            return service.create_request(
+                conn,
+                identity,
+                employee_id=employee_id,
+                leave_type=leave_type,
+                start=start,
+                end=end,
+                today=today_fn(),
+                now=now_fn(),
+                comment=comment,
+                known_in_advance=known_in_advance,
+            )
+
+    @mcp.tool()
     def approve_request(request_id: int, comment: str | None = None) -> dict[str, Any]:
         """HR only. Approve a pending leave request."""
         hr_only()

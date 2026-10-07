@@ -46,6 +46,67 @@ def test_load_identity_rejects_unknown_employee_and_role(conn: sqlite3.Connectio
         service.load_identity(conn, "E1001", "admin")
 
 
+def test_hr_role_only_for_hr_department(conn: sqlite3.Connection) -> None:
+    assert service.load_identity(conn, "E1007", "hr") == Identity("E1007", "hr")  # HRS
+    with pytest.raises(service.PermissionDenied) as error:
+        service.load_identity(conn, "E1014", "hr")  # FIN director
+    assert error.value.code == "HR_ROLE_NOT_ALLOWED"
+    # Anyone may still run with the employee role.
+    assert service.load_identity(conn, "E1014", "employee").role == "employee"
+
+
+# --- HR create ------------------------------------------------------------------
+
+
+def hr_create(conn: sqlite3.Connection, identity: Identity = HR, **overrides: object) -> dict:
+    args: dict = {
+        "employee_id": "E1003",
+        "leave_type": "ANNUAL",
+        "start": date(2026, 10, 27),
+        "end": date(2026, 10, 29),
+        "today": TODAY,
+        "now": NOW,
+    }
+    args.update(overrides)
+    return service.create_request(conn, identity, **args)
+
+
+def test_hr_create_makes_pending_assistant_request(conn: sqlite3.Connection) -> None:
+    result = hr_create(conn)
+    assert result["ok"] is True
+    assert (result["request_id"], result["days"], result["status"]) == (28, 3, "pending")
+    row = conn.execute("SELECT * FROM leave_requests WHERE request_id = 28").fetchone()
+    assert (row["employee_id"], row["status"], row["created_via"]) == (
+        "E1003",
+        "pending",
+        "assistant",
+    )
+
+
+def test_hr_create_is_denied_for_employees(conn: sqlite3.Connection) -> None:
+    with pytest.raises(service.PermissionDenied) as error:
+        hr_create(conn, identity=EMPLOYEE)
+    assert error.value.code == "HR_ONLY"
+    assert request_count(conn) == 27
+
+
+def test_hr_create_follows_the_same_rules(conn: sqlite3.Connection) -> None:
+    # E1004 is on probation until 2026-11-30 (Article 4.3).
+    result = hr_create(conn, employee_id="E1004", start=date(2026, 11, 2), end=date(2026, 11, 4))
+    assert result["ok"] is False
+    assert [v["code"] for v in result["violations"]] == ["PROBATION"]
+    unpaid = hr_create(conn, leave_type="UNPAID", start=date(2026, 11, 9), end=date(2026, 11, 10))
+    assert [v["code"] for v in unpaid["violations"]] == ["REASON_REQUIRED"]
+    assert request_count(conn) == 27
+
+
+def test_hr_create_twice_is_caught_as_overlap(conn: sqlite3.Connection) -> None:
+    assert hr_create(conn)["ok"] is True
+    again = hr_create(conn)
+    assert [v["code"] for v in again["violations"]] == ["OVERLAP"]
+    assert request_count(conn) == 28
+
+
 # --- propose / confirm ----------------------------------------------------------
 
 
