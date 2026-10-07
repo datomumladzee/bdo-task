@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from rag.index import PolicyIndex
+from rag.index import BM25, DENSE_WEIGHT, SUPERSEDED_FACTOR, PolicyIndex, char_ngrams
 from rag.ingest import Chunk
 
 
@@ -108,9 +108,40 @@ def test_superseded_chunks_rank_below_equal_policy_chunks(tmp_path: Path) -> Non
     index = PolicyIndex.build(chunks, FakeEmbedder(), index_dir=tmp_path)
     results = index.search(same, k=2, min_score=0.1).results
     assert [r.chunk.chunk_id for r in results] == ["policy", "faq"]
-    assert results[0].score == pytest.approx(results[1].score)  # raw scores stay comparable
+    policy, faq = results
+    assert policy.score == pytest.approx(policy.keyword + DENSE_WEIGHT * policy.dense)
+    assert faq.score == pytest.approx((faq.keyword + DENSE_WEIGHT * faq.dense) * SUPERSEDED_FACTOR)
 
 
 def test_empty_query_returns_nothing(tmp_path: Path) -> None:
     index = PolicyIndex.build(CHUNKS, FakeEmbedder(), index_dir=tmp_path)
     assert index.search("   ").results == []
+
+
+# --- BM25 over character n-grams ------------------------------------------------
+
+
+def test_char_ngrams_mark_word_boundaries() -> None:
+    assert char_ngrams("Ab cd") == ["_ab", "ab_", "_cd", "cd_"]
+    assert char_ngrams("a") == ["_a_"]
+
+
+def test_inflected_georgian_words_still_match() -> None:
+    bm25 = BM25(["შვებულების მოთხოვნა", "პაროლის სიგრძე"])
+    scores = bm25.scores("შვებულებას")  # different case ending, no exact word match
+    assert scores[0] > 0
+    assert scores[1] == 0
+
+
+def test_bm25_scores_are_normalized() -> None:
+    bm25 = BM25(["annual leave notice", "hotel limit london", "password length"])
+    scores = bm25.scores("hotel limit london")
+    assert 0 < scores.max() <= 1
+    assert scores.argmax() == 1
+
+
+def test_unknown_words_lower_the_score() -> None:
+    bm25 = BM25(["hotel limit london", "password length"])
+    known = bm25.scores("hotel limit").max()
+    with_unknown = bm25.scores("hotel limit xylophone quartz").max()
+    assert with_unknown < known

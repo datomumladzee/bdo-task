@@ -1,4 +1,13 @@
-"""Embedding index over the policy chunks, with an on-disk cache.
+"""Hybrid search over the policy chunks: keyword (BM25) plus embeddings.
+
+The eval set (rag/eval_set.json, rag/evaluate.py) showed that embeddings alone
+work poorly on Georgian, while BM25 over character 3-grams works well: Georgian
+words change their endings (შვებულება, შვებულების, შვებულებას) but keep most
+3-letter fragments. Embeddings add a smaller semantic signal for paraphrases.
+
+Ranking score = BM25 (normalized 0..1) + DENSE_WEIGHT * cosine similarity,
+multiplied by SUPERSEDED_FACTOR for outdated FAQ/Handbook sections.
+"Not found" = the best normalized BM25 score is below RAG_MIN_SCORE.
 
 Each chunk's embedding is cached in .index/ under a hash of (model, chunk text),
 so a chunk is embedded once and never again unless its text or the model changes.
@@ -10,8 +19,11 @@ so a chunk is embedded once and never again unless its text or the model changes
 import argparse
 import hashlib
 import json
+import math
 import os
-from collections.abc import Sequence
+import re
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -22,12 +34,16 @@ from dotenv import load_dotenv
 from rag.ingest import PROJECT_ROOT, Chunk, load_chunks
 
 INDEX_DIR = PROJECT_ROOT / ".index"
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
-# Below this cosine similarity the best match is treated as "not in the documents".
-# Calibrated against real questions; override with RAG_MIN_SCORE in .env.
-DEFAULT_MIN_SCORE = 0.30
-# Outdated summaries (Handbook, FAQ) rank slightly below the current policies.
-SUPERSEDED_PENALTY = 0.05
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
+# Weight of the embedding similarity next to the normalized BM25 score.
+DENSE_WEIGHT = 0.3
+# Outdated summaries (Handbook, FAQ) are multiplied by this, so the current
+# policy wins (Leave Policy Article 1.4, Remote Work Policy Article 1.3).
+SUPERSEDED_FACTOR = 0.6
+# Below this normalized BM25 score the documents most likely do not answer the
+# question. Calibrated on the eval set; override with RAG_MIN_SCORE in .env.
+DEFAULT_MIN_SCORE = 0.22
+NGRAM = 3
 EMBED_BATCH_SIZE = 64
 
 
@@ -54,6 +70,62 @@ class OpenAIEmbedder:
             response = self._client.embeddings.create(model=self.model, input=batch)
             vectors.extend(item.embedding for item in response.data)
         return np.asarray(vectors, dtype=np.float32)
+
+
+# --- keyword search -----------------------------------------------------------
+
+
+def char_ngrams(text: str, n: int = NGRAM) -> list[str]:
+    """Character n-grams of each word, with word boundaries marked by "_"."""
+    grams: list[str] = []
+    for word in re.findall(r"[ა-ჰa-z0-9]+", text.lower()):
+        padded = f"_{word}_"
+        grams.extend(padded[i : i + n] for i in range(max(1, len(padded) - n + 1)))
+    return grams
+
+
+class BM25:
+    """Okapi BM25 over character n-grams, with scores normalized to 0..1."""
+
+    def __init__(
+        self,
+        texts: Sequence[str],
+        tokenize: Callable[[str], list[str]] = char_ngrams,
+        k1: float = 1.5,
+        b: float = 0.75,
+    ) -> None:
+        self.tokenize = tokenize
+        self.k1, self.b = k1, b
+        self.docs = [Counter(tokenize(text)) for text in texts]
+        self.lengths = np.array([sum(doc.values()) for doc in self.docs], dtype=np.float64)
+        self.avg_length = float(self.lengths.mean()) if len(self.docs) else 0.0
+        n = len(self.docs)
+        document_frequency = Counter(term for doc in self.docs for term in doc)
+        self.idf = {
+            term: math.log(1 + (n - df + 0.5) / (df + 0.5))
+            for term, df in document_frequency.items()
+        }
+        # A fragment that appears nowhere counts as maximally rare in the
+        # normalization, so unknown words lower the score instead of being ignored.
+        self.unseen_idf = math.log(1 + (n + 0.5) / 0.5)
+
+    def scores(self, query: str) -> np.ndarray:
+        """BM25 score of every document divided by the query's best possible score."""
+        terms = self.tokenize(query)
+        result = np.zeros(len(self.docs))
+        if not terms or not self.docs:
+            return result
+        for i, doc in enumerate(self.docs):
+            norm = self.k1 * (1 - self.b + self.b * self.lengths[i] / self.avg_length)
+            for term in terms:
+                tf = doc.get(term)
+                if tf:
+                    result[i] += self.idf[term] * tf * (self.k1 + 1) / (tf + norm)
+        best_possible = sum(self.idf.get(t, self.unseen_idf) * (self.k1 + 1) for t in terms)
+        return result / best_possible
+
+
+# --- embedding cache ----------------------------------------------------------
 
 
 def _normalize(matrix: np.ndarray) -> np.ndarray:
@@ -90,27 +162,28 @@ def _save_cache(
     )
 
 
+# --- search -------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class SearchResult:
     chunk: Chunk
-    score: float  # cosine similarity between the question and the chunk
-    rank_score: float  # score after the superseded-document penalty; used for ordering
+    score: float  # ranking score: (keyword + DENSE_WEIGHT * dense) x superseded factor
+    keyword: float  # normalized BM25, 0..1
+    dense: float  # cosine similarity of the embeddings
 
 
 @dataclass(frozen=True)
 class PolicySearch:
     query: str
     results: list[SearchResult]
+    keyword_score: float  # best normalized BM25 over all chunks
     min_score: float
-
-    @property
-    def best_score(self) -> float:
-        return max((r.score for r in self.results), default=0.0)
 
     @property
     def found(self) -> bool:
         """False means the documents most likely do not answer the question."""
-        return self.best_score >= self.min_score
+        return self.keyword_score >= self.min_score
 
 
 @dataclass
@@ -118,6 +191,7 @@ class PolicyIndex:
     chunks: list[Chunk]
     vectors: np.ndarray  # one normalized row per chunk
     embedder: Embedder
+    bm25: BM25
     embedded_count: int = 0  # how many chunks this build had to embed (0 = all cached)
     _query_cache: dict[str, np.ndarray] = field(default_factory=dict, repr=False)
 
@@ -135,7 +209,13 @@ class PolicyIndex:
         vectors = np.stack([cache[key] for key in keys]) if keys else np.zeros((0, 0))
         if missing or len(cache) != len(keys):
             _save_cache(index_dir, embedder.model, chunks, keys, vectors)
-        return cls(chunks=chunks, vectors=vectors, embedder=embedder, embedded_count=len(missing))
+        return cls(
+            chunks=chunks,
+            vectors=vectors,
+            embedder=embedder,
+            bm25=BM25([chunk.text for chunk in chunks]),
+            embedded_count=len(missing),
+        )
 
     def _embed_query(self, query: str) -> np.ndarray:
         if query not in self._query_cache:
@@ -146,15 +226,17 @@ class PolicyIndex:
         if min_score is None:
             min_score = float(os.getenv("RAG_MIN_SCORE") or DEFAULT_MIN_SCORE)
         if not self.chunks or not query.strip():
-            return PolicySearch(query, [], min_score)
-        scores = self.vectors @ self._embed_query(query)
-        penalties = np.array(
-            [SUPERSEDED_PENALTY if c.superseded_note else 0.0 for c in self.chunks]
-        )
-        ranked = scores - penalties
-        top = np.argsort(-ranked)[:k]
-        results = [SearchResult(self.chunks[i], float(scores[i]), float(ranked[i])) for i in top]
-        return PolicySearch(query, results, min_score)
+            return PolicySearch(query, [], 0.0, min_score)
+        keyword = self.bm25.scores(query)
+        dense = self.vectors @ self._embed_query(query)
+        factor = np.array([SUPERSEDED_FACTOR if c.superseded_note else 1.0 for c in self.chunks])
+        ranking = (keyword + DENSE_WEIGHT * dense) * factor
+        top = np.argsort(-ranking)[:k]
+        results = [
+            SearchResult(self.chunks[i], float(ranking[i]), float(keyword[i]), float(dense[i]))
+            for i in top
+        ]
+        return PolicySearch(query, results, float(keyword.max()), min_score)
 
 
 _default_index: PolicyIndex | None = None
@@ -191,11 +273,15 @@ def main(argv: list[str] | None = None) -> None:
     if args.query:
         search = index.search(args.query, k=args.k)
         print(
-            f"best score {search.best_score:.3f} (threshold {search.min_score}) found={search.found}"
+            f"keyword score {search.keyword_score:.3f} "
+            f"(threshold {search.min_score}) found={search.found}"
         )
         for r in search.results:
             note = "  [superseded]" if r.chunk.superseded_note else ""
-            print(f"  {r.score:.3f}  {r.chunk.citation()}{note}")
+            print(
+                f"  {r.score:.3f} (bm25 {r.keyword:.3f}, dense {r.dense:.3f})  "
+                f"{r.chunk.citation()}{note}"
+            )
 
 
 if __name__ == "__main__":

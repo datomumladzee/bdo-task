@@ -63,10 +63,10 @@ def evaluate(index: PolicyIndex, k: int = 5, verbose: bool = True) -> Report:
         hit1 += rank == 1
         hitk += rank is not None
         reciprocal += 1 / rank if rank else 0.0
-        answerable_scores.append(search.best_score)
+        answerable_scores.append(search.keyword_score)
         if verbose:
             status = f"rank {rank}" if rank else "MISS  "
-            print(f"[{status}] {search.best_score:.3f}  {item['topic']}")
+            print(f"[{status}] {search.keyword_score:.3f}  {item['topic']}")
             if rank != 1:
                 for r in search.results:
                     mark = "*" if matches(r.chunk, item["expected"]) else " "
@@ -77,12 +77,12 @@ def evaluate(index: PolicyIndex, k: int = 5, verbose: bool = True) -> Report:
     for item in data["unanswerable"]:
         search = index.search(item["question"], k=k)
         rejected += not search.found
-        unanswerable_scores.append(search.best_score)
+        unanswerable_scores.append(search.keyword_score)
         if verbose:
             top = search.results[0].chunk if search.results else None
             where = f"{top.doc_code} {top.article}" if top else "-"
             verdict = "not found" if not search.found else "WRONGLY FOUND"
-            print(f"[{verdict}] {search.best_score:.3f}  {item['topic']}  (top: {where})")
+            print(f"[{verdict}] {search.keyword_score:.3f}  {item['topic']}  (top: {where})")
 
     n = len(data["answerable"])
     report = Report(
