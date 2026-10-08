@@ -43,6 +43,9 @@ SUPERSEDED_FACTOR = 0.6
 # Below this normalized BM25 score the documents most likely do not answer the
 # question. Calibrated on the eval set; override with RAG_MIN_SCORE in .env.
 DEFAULT_MIN_SCORE = 0.22
+# Outdated passages returned separately, so the answer can point out the
+# outdated FAQ/Handbook version without it taking a slot from the current policy.
+OUTDATED_K = 2
 NGRAM = 3
 EMBED_BATCH_SIZE = 64
 
@@ -179,6 +182,9 @@ class PolicySearch:
     results: list[SearchResult]
     keyword_score: float  # best normalized BM25 over all chunks
     min_score: float
+    # Best-matching superseded passages not already in results (scored without the
+    # penalty), so the answer can say which older statement is outdated.
+    outdated: list[SearchResult] = field(default_factory=list)
 
     @property
     def found(self) -> bool:
@@ -229,14 +235,21 @@ class PolicyIndex:
             return PolicySearch(query, [], 0.0, min_score)
         keyword = self.bm25.scores(query)
         dense = self.vectors @ self._embed_query(query)
-        factor = np.array([SUPERSEDED_FACTOR if c.superseded_note else 1.0 for c in self.chunks])
-        ranking = (keyword + DENSE_WEIGHT * dense) * factor
+        superseded = np.array([c.superseded_note is not None for c in self.chunks])
+        raw = keyword + DENSE_WEIGHT * dense
+        ranking = np.where(superseded, raw * SUPERSEDED_FACTOR, raw)
         top = np.argsort(-ranking)[:k]
         results = [
             SearchResult(self.chunks[i], float(ranking[i]), float(keyword[i]), float(dense[i]))
             for i in top
         ]
-        return PolicySearch(query, results, float(keyword.max()), min_score)
+        shown = set(top.tolist())
+        outdated = [
+            SearchResult(self.chunks[i], float(raw[i]), float(keyword[i]), float(dense[i]))
+            for i in np.argsort(-raw)
+            if superseded[i] and i not in shown and keyword[i] >= min_score
+        ][:OUTDATED_K]
+        return PolicySearch(query, results, float(keyword.max()), min_score, outdated)
 
 
 _default_index: PolicyIndex | None = None

@@ -145,3 +145,18 @@ def test_unknown_words_lower_the_score() -> None:
     known = bm25.scores("hotel limit").max()
     with_unknown = bm25.scores("hotel limit xylophone quartz").max()
     assert with_unknown < known
+
+
+def test_outdated_passages_are_returned_separately(tmp_path: Path) -> None:
+    chunks = [
+        chunk("policy", "carry over unused days five"),
+        chunk("faq", "carry over unused days ten", superseded="outdated"),
+        chunk("other", "hotel limit london"),
+    ]
+    index = PolicyIndex.build(chunks, FakeEmbedder(), index_dir=tmp_path)
+    search = index.search("carry over unused days", k=1, min_score=0.1)
+    assert [r.chunk.chunk_id for r in search.results] == ["policy"]
+    assert [r.chunk.chunk_id for r in search.outdated] == ["faq"]
+    # Not repeated when already among the results, and nothing for unrelated topics.
+    assert index.search("carry over unused days", k=2, min_score=0.1).outdated == []
+    assert index.search("hotel limit london", k=1, min_score=0.1).outdated == []
