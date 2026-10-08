@@ -64,7 +64,8 @@ def build_server(
     now_fn: Callable[[], datetime] = calendar.now,
 ) -> MCPServer:
     """Create the server for one caller. Tests inject today_fn/now_fn."""
-    mcp = MCPServer("northstar-leave", instructions=INSTRUCTIONS)
+    # WARNING: the default INFO logs every request, which floods the CLI's terminal.
+    mcp = MCPServer("northstar-leave", instructions=INSTRUCTIONS, log_level="WARNING")
 
     @contextmanager
     def connect() -> Iterator[sqlite3.Connection]:
