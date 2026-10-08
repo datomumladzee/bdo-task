@@ -230,3 +230,9 @@ tests/                pytest tests
   needs the manager's consent. HR can cancel any pending or approved request.
 - **The HR role comes from the department.** Anyone in `HRS` may run the server
   as HR; there is no separate permission list.
+
+## Known limitations
+
+- Query rewriting: the LLM already turns the question into key words before
+  searching, but a heavily misspelled question can still return "not found";
+  an explicit spelling-correction step would make search more robust.
