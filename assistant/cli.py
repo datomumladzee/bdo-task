@@ -1,101 +1,72 @@
-"""Minimal command-line client for the leave MCP server (no LLM yet).
+"""Georgian command-line HR assistant.
 
-It starts the MCP server as a subprocess and talks to it over stdio, like any
-MCP client. The CLI always runs with the employee role:
+It starts the MCP server as a subprocess (employee role, one conversation id
+per session) and talks to it over stdio. Free text goes to the LLM agent, which
+answers policy questions from the documents, shows the balance and creates
+leave requests after a clear confirmation.
 
     uv run python -m assistant.cli --employee E1001
+    uv run python -m assistant.cli --employee E1001 --debug   # show tool calls
 """
 
 import argparse
-import json
 import os
 import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 import anyio
+from dotenv import load_dotenv
 from mcp import Client, StdioServerParameters
 from mcp.shared.exceptions import MCPError
+from openai import OpenAIError
+
+from assistant.agent import Agent, OpenAIChatModel
+from rag.index import load_index
+from server.calendar import today
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-BALANCE_COMMANDS = {"ბალანსი", "balance"}
-HELP_COMMANDS = {"დახმარება", "help", "?"}
 EXIT_COMMANDS = {"გასვლა", "exit", "quit"}
+HELP_COMMANDS = {"დახმარება", "help", "?"}
 
+GREETING = (
+    "გამარჯობა! მე ვარ Northstar Services-ის HR ასისტენტი. შემიძლია ვუპასუხო კითხვებს "
+    "კომპანიის წესებზე, გაჩვენოთ შვებულების ბალანსი და შევქმნა შვებულების მოთხოვნა.\n"
+    "გასასვლელად აკრიფეთ „გასვლა“."
+)
 HELP_TEXT = (
-    "ბრძანებები:\n"
-    "  ბალანსი     შვებულების ბალანსის ნახვა\n"
-    "  დახმარება   ეს ტექსტი\n"
-    "  გასვლა      პროგრამიდან გასვლა"
+    "მაგალითები:\n"
+    "  რამდენი დღე შვებულება დამრჩა?\n"
+    "  რამდენი დღე გადადის მომდევნო წელზე?\n"
+    "  მინდა შვებულება 23-დან 27 ნოემბრამდე\n"
+    "გასასვლელად: გასვლა"
 )
 
 ReadLine = Callable[[str], Awaitable[str]]
 Write = Callable[[str], None]
 
 
-class ToolCallError(Exception):
-    pass
-
-
-async def call_tool(client: Client, name: str, args: dict[str, Any] | None = None) -> Any:
-    """Call an MCP tool and return its result as Python data."""
-    result = await client.call_tool(name, args or {})
-    text = result.content[0].text if result.content else ""
-    if result.is_error:
-        raise ToolCallError(text)
-    return json.loads(text)
-
-
-def format_balances(balances: list[dict[str, Any]], type_names: dict[str, str]) -> str:
-    """One line per leave type, with approved and pending days (Policy Article 5.2)."""
-    if not balances:
-        return "ბალანსი ვერ მოიძებნა."
-    lines = []
-    for b in balances:
-        name = type_names.get(b["leave_type"], b["leave_type"])
-        lines.append(
-            f"{name}: ხელმისაწვდომია {b['available_days']} დღე "
-            f"(დამტკიცებული {b['approved_days']}, განხილვის პროცესში {b['pending_days']})"
-        )
-    return "\n".join(lines)
-
-
-async def handle(client: Client, line: str, type_names: dict[str, str]) -> str | None:
-    """Return the reply to one line of input, or None to exit."""
-    command = line.strip().lower()
-    if not command:
-        return ""
-    if command in EXIT_COMMANDS:
-        return None
-    if command in HELP_COMMANDS:
-        return HELP_TEXT
-    if command in BALANCE_COMMANDS:
-        data = await call_tool(client, "get_my_balance")
-        return f"თქვენი ბალანსი, {data['year']}:\n" + format_balances(data["balances"], type_names)
-    return "ბრძანება ვერ ვიცანი. აკრიფეთ „დახმარება“."
-
-
-async def repl(client: Client, read_line: ReadLine, write: Write) -> None:
-    """Read-eval-print loop: read a line, answer it, repeat until exit."""
-    types = await call_tool(client, "list_leave_types")
-    type_names = {t["code"]: t["name"] for t in types["leave_types"]}
-    write("გამარჯობა! Northstar Services HR ასისტენტი. აკრიფეთ „დახმარება“.")
+async def repl(agent: Agent, read_line: ReadLine, write: Write) -> None:
+    """Read a line, answer it, repeat until the employee leaves."""
+    write(GREETING)
     while True:
         try:
-            line = await read_line("> ")
+            line = (await read_line("> ")).strip()
         except (EOFError, KeyboardInterrupt):
             break
-        try:
-            reply = await handle(client, line, type_names)
-        except ToolCallError as exc:
-            reply = f"შეცდომა: {exc}"
-        if reply is None:
+        if not line:
+            continue
+        if line.lower() in EXIT_COMMANDS:
             break
-        if reply:
-            write(reply)
+        if line.lower() in HELP_COMMANDS:
+            write(HELP_TEXT)
+            continue
+        try:
+            write(await agent.ask(line))
+        except (OpenAIError, MCPError) as exc:  # keep the session alive on API errors
+            write(f"შეცდომა: {exc}")
     write("ნახვამდის!")
 
 
@@ -122,18 +93,32 @@ def server_params(employee_id: str, conversation_id: str) -> StdioServerParamete
     )
 
 
-async def run(employee_id: str) -> None:
+async def run(employee_id: str, debug: bool) -> None:
+    index = load_index()
     params = server_params(employee_id, conversation_id=uuid.uuid4().hex)
     async with Client(params) as client:
-        await repl(client, _read_stdin, print)
+        agent = Agent(
+            client=client,
+            model=OpenAIChatModel(),
+            search=index.search,
+            employee_id=employee_id,
+            today=today(),
+            log=(lambda line: print(line, file=sys.stderr)) if debug else None,
+        )
+        await agent.start()
+        await repl(agent, _read_stdin, print)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Northstar Services HR assistant (CLI)")
     parser.add_argument("--employee", required=True, help="your employee id, e.g. E1001")
+    parser.add_argument("--debug", action="store_true", help="print tool calls to stderr")
     args = parser.parse_args(argv)
+    load_dotenv(PROJECT_ROOT / ".env")
+    if not os.getenv("OPENAI_API_KEY"):
+        parser.exit(1, "error: OPENAI_API_KEY is not set; add it to .env (see .env.example)\n")
     try:
-        anyio.run(run, args.employee)
+        anyio.run(run, args.employee, args.debug)
     except* KeyboardInterrupt:
         print("\nნახვამდის!")
     except* MCPError:
