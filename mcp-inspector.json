@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "employee-E1001": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "server.mcp_server", "--employee", "E1001", "--role", "employee"]
+    },
+    "employee-E1004-probation": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "server.mcp_server", "--employee", "E1004", "--role", "employee"]
+    },
+    "hr-E1007": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "server.mcp_server", "--employee", "E1007", "--role", "hr"]
+    }
+  }
+}
