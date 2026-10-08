@@ -46,9 +46,19 @@ HELP_TEXT = (
 
 ReadLine = Callable[[str], Awaitable[str]]
 Write = Callable[[str], None]
+Status = Callable[[bool], None]
+
+WORKING = "მუშავდება..."
 
 
-async def repl(agent: Agent, read_line: ReadLine, write: Write) -> None:
+def show_working(on: bool) -> None:
+    """Show the working message, or clear it ("\\r" back to line start, "\\033[K" erase)."""
+    print(WORKING if on else "\r\033[K", end="", flush=True)
+
+
+async def repl(
+    agent: Agent, read_line: ReadLine, write: Write, status: Status = lambda on: None
+) -> None:
     """Read a line, answer it, repeat until the employee leaves."""
     write(GREETING)
     while True:
@@ -63,10 +73,14 @@ async def repl(agent: Agent, read_line: ReadLine, write: Write) -> None:
         if line.lower() in HELP_COMMANDS:
             write(HELP_TEXT)
             continue
+        status(True)
         try:
-            write(await agent.ask(line))
+            reply = await agent.ask(line)
         except (OpenAIError, MCPError) as exc:  # keep the session alive on API errors
-            write(f"შეცდომა: {exc}")
+            reply = f"შეცდომა: {exc}"
+        finally:
+            status(False)
+        write(reply)
     write("ნახვამდის!")
 
 
@@ -106,7 +120,7 @@ async def run(employee_id: str, debug: bool) -> None:
             log=(lambda line: print(line, file=sys.stderr)) if debug else None,
         )
         await agent.start()
-        await repl(agent, _read_stdin, print)
+        await repl(agent, _read_stdin, print, show_working)
 
 
 def main(argv: list[str] | None = None) -> None:
